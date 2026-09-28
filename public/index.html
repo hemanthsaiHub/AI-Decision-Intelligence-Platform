@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Decision Intelligence Platform</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--tx:#1c2333;--mu:#6b7280;--ac:#4f46e5;--bd:#e5e7eb}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#182033;--tx:#e6e9f2;--mu:#9aa4b8;--ac:#818cf8;--bd:#2a344d}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+header{padding:20px 28px;border-bottom:1px solid var(--bd);background:var(--card)}
+h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:var(--mu);font-size:13px}
+main{max-width:1200px;margin:auto;padding:20px;display:grid;gap:16px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;overflow-x:auto}
+.card h2{margin:0 0 10px;font-size:15px}.k{font-size:24px;font-weight:600}.l{color:var(--mu);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--bd)}
+input,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 16px;cursor:pointer;font:inherit;margin-top:8px}
+.chip{display:inline-block;margin:4px 6px 0 0;padding:4px 10px;border:1px solid var(--bd);border-radius:99px;font-size:12px;cursor:pointer;color:var(--mu)}
+code{display:block;background:var(--bg);padding:8px;border-radius:6px;font-size:12px;margin:8px 0;white-space:pre-wrap}
+.note{color:var(--mu);font-size:12px}.up{color:#16a34a}.down{color:#dc2626}canvas{max-height:300px}
+</style>
+</head>
+<body>
+<header><h1>AI Decision Intelligence Platform</h1><p>Forecasting &middot; Anomaly detection &middot; Customer segmentation &middot; Churn prediction &middot; Ask your data in English</p></header>
+<main>
+<div class="kpis" id="kpis"></div>
+<div class="card"><h2>Revenue forecast (next 30 days)</h2><canvas id="fc"></canvas><p class="note" id="best"></p><div id="lb"></div></div>
+<div class="card"><h2>Ask your data</h2>
+<input id="q" placeholder="e.g. Which region had the lowest profit?" value="Which region had the lowest profit?">
+<button onclick="ask()">Ask</button>
+<div><span class="chip">Top 10 customers by revenue</span><span class="chip">Revenue by category</span><span class="chip">Monthly revenue trend</span><span class="chip">Which region has the highest profit?</span></div>
+<div id="ans"></div></div>
+<div class="grid">
+<div class="card"><h2>Monthly revenue</h2><canvas id="mo"></canvas></div>
+<div class="card"><h2>Customer segments (RFM)</h2><canvas id="seg"></canvas><div id="segt"></div></div>
+</div>
+<div class="grid">
+<div class="card"><h2>Detected anomalies</h2><div id="an"></div></div>
+<div class="card"><h2>Churn model</h2><div id="ch"></div></div>
+</div>
+<div class="card"><h2>Sentiment analysis (NLP)</h2>
+<textarea id="tx" rows="2">The delivery was late and the product arrived broken. Very disappointed.</textarea>
+<button onclick="sent()">Analyze</button><p id="sr" class="note"></p></div>
+</main>
+<script>
+const $=s=>document.querySelector(s),fmt=n=>Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+async function get(u,o){const r=await fetch(u,o);if(!r.ok){let m=await r.text();try{m=JSON.parse(m).detail||m}catch(e){}throw new Error(m)}return r.json()}
+const tbl=(cols,rows)=>'<table><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr>'+rows.map(r=>'<tr>'+r.map(v=>'<td>'+(typeof v==='number'?fmt(v):v)+'</td>').join('')+'</tr>').join('')+'</table>';
+const mk=(id,cfg)=>new Chart($(id),cfg);
+async function init(){
+ const k=await get('/api/kpis'),g=k.growth_30d_pct;
+ $('#kpis').innerHTML=[['Revenue','₹'+fmt(k.revenue)],['Profit','₹'+fmt(k.profit)],['Orders',fmt(k.orders)],['Customers',fmt(k.customers)],['Avg order','₹'+fmt(k.aov)],
+ ['30-day growth','<span class="'+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+g+'%</span>']].map(x=>'<div class="card"><div class="l">'+x[0]+'</div><div class="k">'+x[1]+'</div></div>').join('');
+ mk('#mo',{type:'bar',data:{labels:k.monthly.labels,datasets:[{label:'Revenue',data:k.monthly.values,backgroundColor:'#6366f1'}]},options:{plugins:{legend:{display:false}}}});
+ const f=await get('/api/forecast?horizon=30'),h=f.history,p=f.forecast,nh=h.dates.length,pad=Array(nh).fill(null);
+ mk('#fc',{type:'line',data:{labels:h.dates.concat(p.dates),datasets:[
+  {label:'Actual',data:h.values.concat(Array(p.dates.length).fill(null)),borderColor:'#6366f1',pointRadius:0,tension:.2},
+  {label:'Forecast',data:pad.concat(p.values),borderColor:'#f59e0b',pointRadius:0,tension:.2},
+  {label:'Upper',data:pad.concat(p.upper),borderColor:'rgba(245,158,11,.3)',borderDash:[4,4],pointRadius:0},
+  {label:'Lower',data:pad.concat(p.lower),borderColor:'rgba(245,158,11,.3)',borderDash:[4,4],pointRadius:0}]},options:{interaction:{intersect:false}}});
+ $('#best').textContent='Best model on 30-day backtest: '+f.best_model;
+ $('#lb').innerHTML=tbl(['Model','RMSE','MAPE %'],f.leaderboard.map(m=>[m.model,m.rmse,m.mape]));
+ const s=await get('/api/segments');
+ mk('#seg',{type:'doughnut',data:{labels:s.map(x=>x.segment),datasets:[{data:s.map(x=>x.customers),backgroundColor:['#6366f1','#22c55e','#f59e0b','#ef4444','#06b6d4','#a855f7']}]}});
+ $('#segt').innerHTML=tbl(['Segment','Customers','Avg revenue','Recency (d)'],s.map(x=>[x.segment,x.customers,x.avg_revenue,x.avg_recency_days]));
+ const a=await get('/api/anomalies');
+ $('#an').innerHTML=a.length?tbl(['Date','Revenue','Expected','Score'],a.map(x=>[x.date,x.revenue,x.expected,x.score])):'No anomalies found.';
+ const c=await get('/api/churn');
+ $('#ch').innerHTML='<p class="note">AUC <b>'+c.auc+'</b> &middot; Accuracy <b>'+c.accuracy+'</b> &middot; Base churn rate <b>'+c.churn_rate+'</b></p><b class="l">Drivers (logistic weights)</b>'+tbl(['Feature','Weight'],c.drivers.map(d=>[d.feature,d.weight]))+'<br><b class="l">Top at-risk active customers</b>'+tbl(['Customer','Recency','Orders','Risk'],c.at_risk.slice(0,6).map(r=>[r.customer_id,r.recency,r.frequency,r.churn_risk]));
+ ask();
+}
+let qc;
+async function ask(){
+ const q=$('#q').value;$('#ans').innerHTML='<p class="note">Thinking...</p>';
+ try{const r=await get('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})});
+  $('#ans').innerHTML='<code>'+r.sql+'</code><p class="note">Engine: '+r.engine+(r.note?' &mdash; '+r.note:'')+'</p>'+tbl(r.columns,r.rows)+(r.columns.length==2?'<canvas id="qc"></canvas>':'');
+  if(r.columns.length==2&&typeof r.rows[0]?.[1]==='number'){qc&&qc.destroy();qc=mk('#qc',{type:'bar',data:{labels:r.rows.map(x=>x[0]),datasets:[{label:r.columns[1],data:r.rows.map(x=>x[1]),backgroundColor:'#22c55e'}]}})}
+ }catch(e){$('#ans').innerHTML='<p class="down">'+e.message+'</p>'}
+}
+async function sent(){const r=await get('/api/sentiment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:$('#tx').value})});$('#sr').textContent=r.label+' (score '+r.score+', engine: '+r.engine+')'}
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{$('#q').value=c.textContent;ask()});
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')ask()});
+init().catch(e=>document.body.insertAdjacentHTML('beforeend','<p class="down" style="padding:20px">'+e.message+'</p>'));
+</script>
+</body>
+</html>
